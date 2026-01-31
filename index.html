@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Painel Global</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+:root{
+  --card:#ffffff;
+  --primary:#2563eb;
+  --danger:#dc2626;
+  --text:#0f172a;
+}
+body{
+  margin:0;
+  font-family:'Segoe UI',system-ui,Arial;
+
+  /* 🔥 IMAGEM DE FUNDO */
+  background:
+    linear-gradient(rgba(2,6,23,.75),rgba(2,6,23,.75)),
+    url("https://i.im.ge/2026/01/31/elj859.Screenshot-20260130-231508-Chrome-3.jpeg");
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  background-attachment:fixed;
+
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.box{
+  background:var(--card);
+  max-width:460px;
+  width:100%;
+  padding:32px;
+  border-radius:18px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+h2,h3{text-align:center;color:var(--text)}
+input,button{
+  padding:16px;
+  border-radius:12px;
+  font-size:16px;
+  width:100%;
+}
+input{border:1px solid #cbd5e1}
+button{
+  border:none;
+  background:var(--primary);
+  color:#fff;
+  cursor:pointer;
+}
+.hidden{display:none}
+.coin{color:#f59e0b;font-weight:bold}
+.card{
+  background:#f8fafc;
+  padding:14px;
+  border-radius:14px;
+}
+ul{padding:0}
+li{
+  list-style:none;
+  background:#f8fafc;
+  padding:10px;
+  border-radius:10px;
+  margin-bottom:8px;
+  display:flex;
+  justify-content:space-between;
+}
+.ctrls{display:flex;gap:6px}
+.ctrls input{width:70px;padding:6px}
+.remove{background:var(--danger)}
+</style>
+</head>
+
+<body>
+
+<div class="box" id="loginBox">
+  <h2>🔐 Login</h2>
+  <input id="loginUser" placeholder="Login">
+  <input id="loginPass" type="password" placeholder="Senha">
+  <button onclick="login()">Entrar</button>
+  <p onclick="showCadastro()" style="text-align:center;color:#2563eb;cursor:pointer">
+    Criar conta
+  </p>
+</div>
+
+<div class="box hidden" id="cadastroBox">
+  <h2>📝 Criar Conta</h2>
+  <input id="cadLogin" placeholder="Login">
+  <input id="cadPass" type="password" placeholder="Senha">
+  <input id="cadCpf" placeholder="CPF">
+  <input id="cadNasc" type="date">
+  <button onclick="cadastrar()">Cadastrar</button>
+  <p onclick="showLogin()" style="text-align:center;color:#2563eb;cursor:pointer">
+    Voltar
+  </p>
+</div>
+
+<div class="box hidden" id="userBox">
+  <h2>👤 Conta</h2>
+
+  <div class="card" style="text-align:center">
+    💵 SALDO DISPONIVEL: <span class="coin" id="minhasMoedas">0</span>
+  </div>
+
+  <div class="card" id="lojaBox">
+    <h3>Shopee</h3>
+    <p>Preço: <b>10 moedas</b></p>
+    <button onclick="comprar()">SACAR</button>
+  </div>
+
+  <div class="card hidden" id="adminBox">
+    <h3>⚙ Admin</h3>
+    <ul id="listaUsuarios"></ul>
+  </div>
+
+  <button onclick="logout()">Sair</button>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, query, where,
+  getDocs, onSnapshot, deleteDoc, doc, updateDoc
+} from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyBRU1COppsLe_QJmmRmFRASW-w_5pdUMSw",
+  authDomain: "teste-f56fb.firebaseapp.com",
+  projectId: "teste-f56fb"
+});
+
+const db = getFirestore(app);
+const usersRef = collection(db,"usuarios");
+
+const ADMIN_USER="admin", ADMIN_PASS="Escol@2024";
+const PRECO=10;
+const LINK="https://drive.google.com/file/d/1EsZtiiV7DfdsavMAQGX-2VZEV3jR_LKI/view";
+
+let usuarioId=null;
+
+window.showCadastro=()=>{loginBox.classList.add("hidden");cadastroBox.classList.remove("hidden")}
+window.showLogin=()=>{cadastroBox.classList.add("hidden");loginBox.classList.remove("hidden")}
+
+/* ✅ VALIDAÇÃO DE CPF */
+function validarCPF(cpf){
+  cpf = cpf.replace(/\D/g,'');
+  if(cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
+
+  let soma=0, resto;
+  for(let i=1;i<=9;i++) soma+=parseInt(cpf[i-1])*(11-i);
+  resto=(soma*10)%11;
+  if(resto===10||resto===11) resto=0;
+  if(resto!==parseInt(cpf[9])) return false;
+
+  soma=0;
+  for(let i=1;i<=10;i++) soma+=parseInt(cpf[i-1])*(12-i);
+  resto=(soma*10)%11;
+  if(resto===10||resto===11) resto=0;
+  if(resto!==parseInt(cpf[10])) return false;
+
+  return true;
+}
+
+window.cadastrar=async()=>{
+  if(!cadLogin.value||!cadPass.value||!cadCpf.value||!cadNasc.value)
+    return alert("Preencha todos os campos");
+
+  if(!validarCPF(cadCpf.value))
+    return alert("CPF inválido");
+
+  const q=query(usersRef,where("login","==",cadLogin.value));
+  if(!(await getDocs(q)).empty) return alert("Login já existe");
+
+  await addDoc(usersRef,{
+    login:cadLogin.value,
+    pass:cadPass.value,
+    cpf:cadCpf.value.replace(/\D/g,''),
+    nascimento:cadNasc.value,
+    moedas:0
+  });
+
+  alert("Conta criada com sucesso");
+  showLogin();
+}
+
+window.login=async()=>{
+  const q=query(
+    usersRef,
+    where("login","==",loginUser.value),
+    where("pass","==",loginPass.value)
+  );
+
+  if(loginUser.value===ADMIN_USER && loginPass.value===ADMIN_PASS){
+    userBox.classList.remove("hidden");
+    loginBox.classList.add("hidden");
+    adminBox.classList.remove("hidden");
+    lojaBox.classList.add("hidden");
+    minhasMoedas.textContent="∞";
+    ouvirUsuarios();
+    return;
+  }
+
+  const snap=await getDocs(q);
+  if(snap.empty) return alert("Login inválido");
+
+  usuarioId=snap.docs[0].id;
+  loginBox.classList.add("hidden");
+  userBox.classList.remove("hidden");
+
+  onSnapshot(doc(db,"usuarios",usuarioId),d=>{
+    minhasMoedas.textContent=d.data().moedas;
+  });
+}
+
+function ouvirUsuarios(){
+  onSnapshot(usersRef,snap=>{
+    listaUsuarios.innerHTML="";
+    snap.forEach(d=>{
+      const u=d.data();
+      const li=document.createElement("li");
+      li.innerHTML=`<b>${u.login}</b><br>CPF: ${u.cpf}<br>💰 ${u.moedas}`;
+      const c=document.createElement("div");
+      c.className="ctrls";
+
+      const i=document.createElement("input");
+      i.type="number";
+
+      const b=document.createElement("button");
+      b.textContent="OK";
+      b.onclick=()=>updateDoc(doc(db,"usuarios",d.id),{moedas:+i.value});
+
+      const r=document.createElement("button");
+      r.textContent="X";
+      r.className="remove";
+      r.onclick=()=>deleteDoc(doc(db,"usuarios",d.id));
+
+      c.append(i,b,r);
+      li.appendChild(c);
+      listaUsuarios.appendChild(li);
+    });
+  });
+}
+
+window.comprar=async()=>{
+  const ref=doc(db,"usuarios",usuarioId);
+  const snap=await getDocs(query(usersRef,where("__name__","==",usuarioId)));
+  const moedas=snap.docs[0].data().moedas;
+  if(moedas<PRECO) return alert("DATA INDISPONIVEL PARA SAQUE");
+  await updateDoc(ref,{moedas:moedas-PRECO});
+  window.open(LINK,"_blank");
+}
+
+window.logout=()=>location.reload();
+</script>
+
+</body>
+</html>
